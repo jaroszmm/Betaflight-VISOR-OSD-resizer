@@ -33,6 +33,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-vis
 .cv{position:relative;width:100%;border:1px solid var(--line);border-radius:4px;background:
 linear-gradient(var(--grid) 1px,transparent 1px) 0 0/100% calc(100%/var(--h)),linear-gradient(90deg,var(--grid) 1px,transparent 1px) 0 0/calc(100%/var(--w)) 100%;overflow:hidden}
 .cv span{position:absolute;font:10px/1 ui-monospace,Menlo,Consolas,monospace;background:var(--chip);color:var(--ink);padding:1px 2px;border-radius:2px;white-space:nowrap}
+.zn{position:absolute;background:rgba(220,60,60,.22);border:1px dashed #d33;pointer-events:none}
 .cap{font-size:.85rem;color:var(--mute);margin:0 0 6px}
 table{border-collapse:collapse;width:100%;font:13px ui-monospace,Menlo,Consolas,monospace}
 td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
@@ -75,6 +76,16 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 </div>
 <div class="row" style="margin-top:12px">
 <label class="chk"><input type="checkbox" id="hid"> Also move elements that are hidden or disabled</label>
+<label>Bottom margin (rows) <input type="number" id="mg" value="0" min="0" max="5"></label>
+</div>
+<div class="row" style="margin-top:12px">
+<label class="chk"><input type="checkbox" id="zon" checked> Avoid DJI hardcoded icons (elements in the no-go zones are moved up or down, whichever is closer)</label>
+</div>
+<div class="row" style="margin-top:8px">
+<label>Zone A (SD status) columns <span class="row" style="gap:6px"><input type="number" id="a1" value="45" min="0" max="63"><input type="number" id="a2" value="59" min="0" max="63"></span></label>
+<label>rows <span class="row" style="gap:6px"><input type="number" id="a3" value="7" min="0" max="31"><input type="number" id="a4" value="8" min="0" max="31"></span></label>
+<label>Zone B (bottom icons): nothing starting right of column <input type="number" id="b1" value="34" min="0" max="63"></label>
+<label>rows <span class="row" style="gap:6px"><input type="number" id="b3" value="20" min="0" max="31"><input type="number" id="b4" value="20" min="0" max="31"></span></label>
 </div>
 <p class="note" id="cnote"></p>
 <p class="row" style="margin-top:12px"><button id="go">Resize layout</button></p>
@@ -105,34 +116,54 @@ const DEF={bf:[0,2],ap:[1,2]};
 const HINT={bf:"Paste the output of get osd, diff all or dump from the Betaflight CLI (lines like osd_vbat_pos = 3150).",
 ap:"Paste your .param file or just the OSD lines (lines like OSD1_ALTITUDE_X,41). Elements are moved only if their _EN is 1."};
 const CNOTE={bf:"VISOR with UHD fonts draws a 60x22 grid, so a layout made for the stock O3/O4 canvas (53x20) needs resizing. With HD fonts the stock canvas is already right.",
-ap:"HD layouts use 50x18 and WTFOS/DJI layouts use 60x22. If your layout reaches below the last row of the old canvas, the tool treats those rows as part of it."};
+ap:"HD layouts use 50x18 and WTFOS/DJI layouts use 60x22. If your layout reaches below the last row of the old canvas, the tool treats those rows as part of it. Items in the middle move together with the horizon so they stay lined up with it."};
 const AFTER={bf:"The canvas size itself is not set here: newer Betaflight versions take it from the video system. Positions beyond the reported canvas show past the border in the configurator, and VISOR draws them. Check the layout in the goggles.",
 ap:"Load the file in Mission Planner (Config, Full Parameter List, Load from file) or your ground station. Also check that OSDn_TXT_RES is set for the new canvas; the value list differs between versions. This tool changes positions only."};
 let mode="bf";
 function fill(id,def){const s=$(id);s.innerHTML="";PRE[mode].forEach((p,i)=>{const o=document.createElement("option");o.value=i;o.textContent=p[1]?p[0]+" ("+p[1]+"x"+p[2]+")":p[0];s.appendChild(o)});s.value=def}
 function sync(sel,w,h){const p=PRE[mode][sel.value];if(p[1]){w.value=p[1];h.value=p[2]}}
 function setMode(){mode=$("mode").value;fill("sp",DEF[mode][0]);fill("tp",DEF[mode][1]);sync($("sp"),$("ow"),$("oh"));sync($("tp"),$("nw"),$("nh"));
-$("scl").hidden=mode!=="ap";$("hint").textContent=HINT[mode]+" You can also drop a file onto the box or use Open file.";$("cnote").textContent=CNOTE[mode];
+$("scl").hidden=mode!=="ap";$("hint").textContent=HINT[mode]+" You can also drop a file anywhere on the page or use Open file.";$("cnote").textContent=CNOTE[mode];
 $("in").placeholder=mode==="bf"?"osd_vbat_pos = 3150\nset osd_link_quality_pos = 2082":"OSD1_ALTITUDE_X,41\nOSD1_ALTITUDE_Y,7\nOSD1_ALTITUDE_EN,1";
 $("res").hidden=true;$("pv").hidden=true}
+function autoZ(){$("zon").checked=(+$("nw").value===60&&+$("nh").value===22)}
 $("mode").onchange=setMode;
 $("sp").onchange=()=>sync($("sp"),$("ow"),$("oh"));
-$("tp").onchange=()=>sync($("tp"),$("nw"),$("nh"));
+$("tp").onchange=()=>{sync($("tp"),$("nw"),$("nh"));autoZ()};
+$("nw").oninput=$("nh").oninput=autoZ;
 setMode();
 const dec=p=>[(p&31)|(((p>>10)&1)<<5),(p>>5)&31];
 const enc=(p,x,y)=>(p&0xF800)|(x&31)|(((x>>5)&1)<<10)|((y&31)<<5);
 const HZ=["osd_crosshairs_pos","osd_ah_sbar_pos","osd_ah_pos","osd_up_down_reference_pos"];
+const WID={gpslat:11,gpslong:11,gps_lat:11,gps_lon:11,message:26,compass:9,compass_bar:9,horizon:9,warnings:14,clk:7,fltime:7,tim_1:7,tim_2:7,rtc_date_time:8,disarmed:8};
+function anchor(raw,o){
+ const h=raw.find(r=>r.name==="HORIZON")||raw.find(r=>r.name==="osd_crosshairs_pos")||raw.find(r=>r.name==="osd_ah_pos");
+ const def=Math.round((o.nw-o.ow)/2);if(!h)return def;
+ const s=Math.floor(o.nw/2)-h.x;return Math.abs(s-def)>4?def:s;
+}
 function mapXY(r,o){
- const cx=Math.floor(o.nw/2),cy=Math.floor(o.nh/2),dW=o.nw-o.ow,dH=o.nh-o.ohe;let nx,ny;
+ const cx=Math.floor(o.nw/2),cy=Math.floor(o.nh/2),dW=o.nw-o.ow,dH=o.nh-o.ohe-o.mg;let nx,ny;
  if(r.name==="osd_crosshairs_pos"||r.name==="osd_ah_sbar_pos"){nx=cx;ny=cy}
  else if(r.name==="osd_ah_pos"){nx=cx;ny=cy-4}
  else if(r.name==="osd_up_down_reference_pos"){nx=cx-1;ny=cy}
  else if(r.name==="HORIZON"){nx=cx;ny=cy-1}
  else{
-  nx=r.x<o.ow/3?r.x:r.x<2*o.ow/3?r.x+Math.round(dW/2):r.x+dW;
-  ny=r.y<=2?r.y:r.y>=o.ohe-5?r.y+dH:Math.round(r.y*o.nh/o.ohe);
+  const mid=(r.x>=o.ow/3&&r.x<2*o.ow/3)||r.name==="MESSAGE";
+  nx=mid?r.x+o.cs:r.x<o.ow/3?r.x:r.x+dW;
+  ny=r.y<=2?r.y:r.y>=o.ohe-5?r.y+dH:Math.round(r.y*(o.nh-o.mg)/o.ohe);
  }
  return [Math.max(0,Math.min(nx,o.nw-1)),Math.max(0,Math.min(ny,o.nh-1))];
+}
+function avoid(raw,zones,o){
+ for(let pass=0;pass<3;pass++){let ch=false;
+  raw.forEach(r=>{const w=WID[r.key]||6;
+   zones.forEach(z=>{
+    if((z.start?(r.nx>=z.x1&&r.nx<=z.x2):(r.nx<=z.x2&&r.nx+w-1>=z.x1))&&r.ny>=z.y1&&r.ny<=z.y2){
+     const up=z.y1-1,dn=z.y2+1,okU=up>=0,okD=dn<=o.nh-1;
+     const t=okU&&okD?((r.ny-up)<=(dn-r.ny)?up:dn):okU?up:dn;
+     if(r.zm===undefined)r.zm=r.ny;r.ny=t;ch=true}
+   })});
+  if(!ch)break}
 }
 function parseBF(src,hid){
  const re=/^\s*(?:set\s+)?(osd_[a-z0-9_]+_pos)\s*=\s*(\d+)/gim,seen={},raw=[];let m;
@@ -141,7 +172,7 @@ function parseBF(src,hid){
   if(seen[name]||name==="osd_camera_frame_pos")continue;seen[name]=1;
   const vis=(p&0x3800)!==0,hz=HZ.includes(name);
   if(!vis&&!hid&&!hz)continue;
-  const[x,y]=dec(p);raw.push({name,label:name.replace(/^osd_|_pos$/g,""),x,y,p,vis:vis||hz});
+  const[x,y]=dec(p);const key=name.replace(/^osd_|_pos$/g,"");raw.push({name,key,label:key,x,y,p,vis:vis||hz});
  }
  return raw;
 }
@@ -153,32 +184,38 @@ function parseAP(src,hid,scr){
   if(e.X===undefined||e.Y===undefined||(scr!=="all"&&e.s!==scr))return;
   const on=e.EN===1,hz=e.n==="HORIZON";
   if(!on&&!hid&&!hz)return;
-  raw.push({name:e.n,scr:e.s,label:e.s+" "+e.n.toLowerCase(),x:e.X,y:e.Y,vis:on||hz});
+  raw.push({name:e.n,key:e.n.toLowerCase(),scr:e.s,label:e.s+" "+e.n.toLowerCase(),x:e.X,y:e.Y,vis:on||hz});
  });
  return raw;
 }
-function draw(el,list,w,h,after){
+function draw(el,list,w,h,after,zones){
  el.style.setProperty("--w",w);el.style.setProperty("--h",h);el.style.aspectRatio=(w*0.6)+"/"+h;el.innerHTML="";
+ (zones||[]).forEach(z=>{const d=document.createElement("div");d.className="zn";
+  d.style.left=z.x1/w*100+"%";d.style.width=(z.x2-z.x1+1)/w*100+"%";d.style.top=z.y1/h*100+"%";d.style.height=(z.y2-z.y1+1)/h*100+"%";el.appendChild(d)});
  list.forEach(e=>{const s=document.createElement("span"),x=after?e.nx:e.x,y=after?e.ny:e.y;
   s.style.left=Math.min(x/w*100,96)+"%";s.style.top=Math.min(y/h*100,95)+"%";s.textContent=e.label;el.appendChild(s)});
 }
 let outText="",fname="osd_resized.txt";
 $("go").onclick=()=>{
- const o={ow:+$("ow").value,oh:+$("oh").value,nw:+$("nw").value,nh:+$("nh").value},src=$("in").value,hid=$("hid").checked;
+ const o={ow:+$("ow").value,oh:+$("oh").value,nw:+$("nw").value,nh:+$("nh").value,mg:Math.max(0,+$("mg").value||0)},src=$("in").value,hid=$("hid").checked;
  const raw=mode==="bf"?parseBF(src,hid):parseAP(src,hid,$("scr").value);
  $("res").hidden=false;$("msg").className="note";$("after").textContent=AFTER[mode];
  if(!raw.length){$("msg").textContent=mode==="bf"?"No osd_..._pos lines found. Paste the output of get osd, diff all or dump.":"No enabled OSD items found. Check the pasted lines and the selected screen.";$("msg").className="note warn";$("out").value="";$("pv").hidden=true;return}
  o.ohe=Math.max(o.oh,Math.max(...raw.map(r=>r.y))+1);
+ o.cs=anchor(raw,o);
  raw.forEach(r=>{[r.nx,r.ny]=mapXY(r,o)});
+ const zones=$("zon").checked?[{x1:+$("a1").value,x2:+$("a2").value,y1:+$("a3").value,y2:+$("a4").value},{x1:+$("b1").value+1,x2:o.nw-1,y1:+$("b3").value,y2:+$("b4").value,start:true}]:[];
+ avoid(raw,zones,o);
+ const zmoved=raw.filter(r=>r.zm!==undefined).map(r=>r.label+" (row "+r.zm+" to "+r.ny+")");
  let lines=[];
  if(mode==="bf"){raw.forEach(r=>{r.np=enc(r.p,r.nx,r.ny);if(r.np!==r.p)lines.push("set "+r.name+" = "+r.np)});outText=lines.join("\n")+"\nsave\n";fname="osd_resized.txt"}
  else{raw.forEach(r=>{if(r.nx!==r.x)lines.push(r.scr+"_"+r.name+"_X,"+r.nx);if(r.ny!==r.y)lines.push(r.scr+"_"+r.name+"_Y,"+r.ny)});outText=lines.join("\r\n")+"\r\n";fname="osd_resized.param"}
  $("out").value=outText;
  const ch=raw.filter(r=>r.nx!==r.x||r.ny!==r.y).length,edge=raw.filter(r=>r.nx>=o.nw-1).length;
- $("msg").textContent=raw.length+" elements read, "+ch+" changed, from "+o.ow+"x"+o.oh+" to "+o.nw+"x"+o.nh+". Elements that are hidden or disabled stay put unless the box is ticked (the horizon is always moved)."+(edge?" "+edge+" element(s) sit in the last column, so check that they fit.":"");
+ $("msg").textContent=raw.length+" elements read, "+ch+" changed, from "+o.ow+"x"+o.oh+" to "+o.nw+"x"+o.nh+". Elements that are hidden or disabled stay put unless the box is ticked (the horizon is always moved)."+(edge?" "+edge+" element(s) sit in the last column, so check that they fit.":"")+(zmoved.length?" Moved out of the no-go zones: "+zmoved.join(", ")+".":"");
  $("pv").hidden=false;$("c1").textContent="Before ("+o.ow+"x"+o.oh+")";$("c2").textContent="After ("+o.nw+"x"+o.nh+")";
  const show=raw.filter(r=>r.vis||hid);
- draw($("v1"),show,o.ow,Math.max(o.oh,o.ohe),0);draw($("v2"),show,o.nw,o.nh,1);
+ draw($("v1"),show,o.ow,Math.max(o.oh,o.ohe),0,[]);draw($("v2"),show,o.nw,o.nh,1,zones);
  $("tb").innerHTML="<tr><th>Element</th><th>Before</th><th>After</th></tr>"+raw.map(r=>"<tr><td>"+r.label+"</td><td>"+r.x+","+r.y+"</td><td>"+r.nx+","+r.ny+"</td></tr>").join("");
 };
 $("cp").onclick=async()=>{try{await navigator.clipboard.writeText(outText)}catch(e){$("out").select();document.execCommand&&document.execCommand("copy")}$("cp").textContent="Copied";setTimeout(()=>$("cp").textContent="Copy lines",1500)};
