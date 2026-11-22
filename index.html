@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Betaflight OSD canvas resizer</title>
+<title>OSD canvas resizer: Betaflight and ArduPilot</title>
 <style>
 :root{--bg:#f3f5f7;--panel:#fff;--ink:#14212b;--mute:#5b6b78;--line:#cdd6dd;--acc:#0a6e8a;--acc-ink:#fff;--grid:#e7ecf0;--chip:#d9eef5;--warn:#9a4b00;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -19,6 +19,7 @@ h2{font-size:1rem;margin:0 0 10px}
 textarea{width:100%;min-height:150px;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;resize:vertical}
 .row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
 label{display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--mute)}
+label[hidden]{display:none}
 select,input[type=number]{font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 8px}
 input[type=number]{width:74px}
 label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--ink)}
@@ -39,16 +40,27 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 </head>
 <body>
 <main>
-<h1>Betaflight OSD canvas resizer</h1>
-<p class="lead">Paste the OSD lines from a Betaflight CLI dump made for one canvas, pick the canvas you built it for and the one you want, and get <code>set</code> lines for the new size. It only edits element positions and keeps the profile flags.</p>
+<h1>OSD canvas resizer</h1>
+<p class="lead">Stretch an OSD layout to a bigger canvas. Choose Betaflight or ArduPilot, paste your CLI output or parameter file, pick the canvas sizes, and get lines for the new size. Only element positions change.</p>
 
 <section>
-<h2>1. Paste your CLI output</h2>
-<textarea id="in" spellcheck="false" placeholder="Paste the output of diff all, dump or get osd here, e.g.&#10;osd_vbat_pos = 3150&#10;set osd_link_quality_pos = 2082"></textarea>
+<h2>1. Flight controller firmware</h2>
+<div class="row">
+<label>Firmware
+<select id="mode"><option value="bf">Betaflight (CLI)</option><option value="ap">ArduPilot (param file)</option></select></label>
+<label id="scl" hidden>OSD screen
+<select id="scr"><option value="OSD1">OSD1</option><option value="OSD2">OSD2</option><option value="OSD3">OSD3</option><option value="OSD4">OSD4</option><option value="all">All screens</option></select></label>
+</div>
 </section>
 
 <section>
-<h2>2. Canvas sizes</h2>
+<h2>2. Paste your layout</h2>
+<textarea id="in" spellcheck="false"></textarea>
+<p class="note" id="hint"></p>
+</section>
+
+<section>
+<h2>3. Canvas sizes</h2>
 <div class="row">
 <label>Layout was made for
 <select id="sp"></select></label>
@@ -60,18 +72,18 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 <label>Rows <input type="number" id="nh" min="10" max="31"></label>
 </div>
 <div class="row" style="margin-top:12px">
-<label class="chk"><input type="checkbox" id="hid"> Also move elements that are hidden in every profile</label>
+<label class="chk"><input type="checkbox" id="hid"> Also move elements that are hidden or disabled</label>
 </div>
-<p class="note">VISOR with UHD fonts draws a 60x22 grid, so a layout made for the stock O3/O4 canvas (53x20) needs resizing. If VISOR runs with HD fonts, the stock canvas is already right and nothing needs resizing.</p>
+<p class="note" id="cnote"></p>
 <p class="row" style="margin-top:12px"><button id="go">Resize layout</button></p>
 </section>
 
 <section id="res" hidden>
-<h2>3. Result</h2>
+<h2>4. Result</h2>
 <p class="note" id="msg" style="margin:0 0 10px"></p>
 <textarea id="out" readonly spellcheck="false"></textarea>
-<p class="row" style="margin-top:10px"><button id="cp">Copy lines</button><button class="alt" id="dl">Download .txt</button></p>
-<p class="note">The canvas size itself is not set here: newer Betaflight versions take it from the video system. Positions beyond the reported canvas still show in the configurator past the border, and VISOR draws them. Check the layout in the goggles.</p>
+<p class="row" style="margin-top:10px"><button id="cp">Copy lines</button><button class="alt" id="dl">Download file</button></p>
+<p class="note" id="after"></p>
 </section>
 
 <section id="pv" hidden>
@@ -84,66 +96,91 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 </section>
 </main>
 <script>
-const PRE=[["Stock O3/O4, Walksnail, Betaflight HD default",53,20],["HDZero",50,18],["VISOR / WTFOS UHD fonts",60,22],["Custom",0,0]];
 const $=id=>document.getElementById(id);
-const fill=(s,def)=>{PRE.forEach((p,i)=>{const o=document.createElement("option");o.value=i;o.textContent=p[3-1]?p[0]+" ("+p[1]+"x"+p[2]+")":p[0];s.appendChild(o)});s.value=def};
-fill($("sp"),0);fill($("tp"),2);
-function sync(sel,w,h){const p=PRE[sel.value];if(p[1]){w.value=p[1];h.value=p[2]}}
+const PRE={bf:[["Stock O3/O4, Walksnail, Betaflight HD default",53,20],["HDZero",50,18],["VISOR / WTFOS UHD fonts",60,22],["Custom",0,0]],
+ap:[["SD",30,16],["HD",50,18],["WTFOS / DJI 60x22",60,22],["Custom",0,0]]};
+const DEF={bf:[0,2],ap:[1,2]};
+const HINT={bf:"Paste the output of get osd, diff all or dump from the Betaflight CLI (lines like osd_vbat_pos = 3150).",
+ap:"Paste your .param file or just the OSD lines (lines like OSD1_ALTITUDE_X,41). Elements are moved only if their _EN is 1."};
+const CNOTE={bf:"VISOR with UHD fonts draws a 60x22 grid, so a layout made for the stock O3/O4 canvas (53x20) needs resizing. With HD fonts the stock canvas is already right.",
+ap:"HD layouts use 50x18 and WTFOS/DJI layouts use 60x22. If your layout reaches below the last row of the old canvas, the tool treats those rows as part of it."};
+const AFTER={bf:"The canvas size itself is not set here: newer Betaflight versions take it from the video system. Positions beyond the reported canvas show past the border in the configurator, and VISOR draws them. Check the layout in the goggles.",
+ap:"Load the file in Mission Planner (Config, Full Parameter List, Load from file) or your ground station. Also check that OSDn_TXT_RES is set for the new canvas; the value list differs between versions. This tool changes positions only."};
+let mode="bf";
+function fill(id,def){const s=$(id);s.innerHTML="";PRE[mode].forEach((p,i)=>{const o=document.createElement("option");o.value=i;o.textContent=p[1]?p[0]+" ("+p[1]+"x"+p[2]+")":p[0];s.appendChild(o)});s.value=def}
+function sync(sel,w,h){const p=PRE[mode][sel.value];if(p[1]){w.value=p[1];h.value=p[2]}}
+function setMode(){mode=$("mode").value;fill("sp",DEF[mode][0]);fill("tp",DEF[mode][1]);sync($("sp"),$("ow"),$("oh"));sync($("tp"),$("nw"),$("nh"));
+$("scl").hidden=mode!=="ap";$("hint").textContent=HINT[mode];$("cnote").textContent=CNOTE[mode];
+$("in").placeholder=mode==="bf"?"osd_vbat_pos = 3150\nset osd_link_quality_pos = 2082":"OSD1_ALTITUDE_X,41\nOSD1_ALTITUDE_Y,7\nOSD1_ALTITUDE_EN,1";
+$("res").hidden=true;$("pv").hidden=true}
+$("mode").onchange=setMode;
 $("sp").onchange=()=>sync($("sp"),$("ow"),$("oh"));
 $("tp").onchange=()=>sync($("tp"),$("nw"),$("nh"));
-sync($("sp"),$("ow"),$("oh"));sync($("tp"),$("nw"),$("nh"));
+setMode();
 const dec=p=>[(p&31)|(((p>>10)&1)<<5),(p>>5)&31];
 const enc=(p,x,y)=>(p&0xF800)|(x&31)|(((x>>5)&1)<<10)|((y&31)<<5);
-const HORIZON=["osd_crosshairs_pos","osd_ah_sbar_pos","osd_ah_pos","osd_up_down_reference_pos"];
-const SKIP=["osd_camera_frame_pos"];
-function mapXY(name,x,y,o){
- const cx=Math.floor(o.nw/2),cy=Math.floor(o.nh/2),dW=o.nw-o.ow,dH=o.nh-o.oh;
- let nx,ny;
- if(name==="osd_crosshairs_pos"||name==="osd_ah_sbar_pos"){nx=cx;ny=cy}
- else if(name==="osd_ah_pos"){nx=cx;ny=cy-4}
- else if(name==="osd_up_down_reference_pos"){nx=cx-1;ny=cy}
+const HZ=["osd_crosshairs_pos","osd_ah_sbar_pos","osd_ah_pos","osd_up_down_reference_pos"];
+function mapXY(r,o){
+ const cx=Math.floor(o.nw/2),cy=Math.floor(o.nh/2),dW=o.nw-o.ow,dH=o.nh-o.ohe;let nx,ny;
+ if(r.name==="osd_crosshairs_pos"||r.name==="osd_ah_sbar_pos"){nx=cx;ny=cy}
+ else if(r.name==="osd_ah_pos"){nx=cx;ny=cy-4}
+ else if(r.name==="osd_up_down_reference_pos"){nx=cx-1;ny=cy}
+ else if(r.name==="HORIZON"){nx=cx;ny=cy-1}
  else{
-  nx=x<o.ow/3?x:x<2*o.ow/3?x+Math.round(dW/2):x+dW;
-  ny=y<=2?y:y>=o.oh-5?y+dH:Math.round(y*o.nh/o.oh);
+  nx=r.x<o.ow/3?r.x:r.x<2*o.ow/3?r.x+Math.round(dW/2):r.x+dW;
+  ny=r.y<=2?r.y:r.y>=o.ohe-5?r.y+dH:Math.round(r.y*o.nh/o.ohe);
  }
  return [Math.max(0,Math.min(nx,o.nw-1)),Math.max(0,Math.min(ny,o.nh-1))];
 }
-function draw(el,list,w,h,which){
- el.style.setProperty("--w",w);el.style.setProperty("--h",h);
- el.style.aspectRatio=(w*0.6)+"/"+(h*1.0);
- el.innerHTML="";
- list.forEach(e=>{const s=document.createElement("span");const[x,y]=which?[e.nx,e.ny]:[e.x,e.y];
-  s.style.left=(x/w*100)+"%";s.style.top=(y/h*100)+"%";s.textContent=e.name.replace(/^osd_|_pos$/g,"");el.appendChild(s)});
-}
-let outText="";
-$("go").onclick=()=>{
- const o={ow:+$("ow").value,oh:+$("oh").value,nw:+$("nw").value,nh:+$("nh").value};
- const re=/^\s*(?:set\s+)?(osd_[a-z0-9_]+_pos)\s*=\s*(\d+)/gim;
- const src=$("in").value,list=[],seen={};let m;
+function parseBF(src,hid){
+ const re=/^\s*(?:set\s+)?(osd_[a-z0-9_]+_pos)\s*=\s*(\d+)/gim,seen={},raw=[];let m;
  while((m=re.exec(src))){
   const name=m[1].toLowerCase(),p=+m[2];
-  if(seen[name]||SKIP.includes(name))continue;seen[name]=1;
-  const vis=(p&0x3800)!==0;
-  if(!vis&&!$("hid").checked&&!HORIZON.includes(name))continue;
-  const[x,y]=dec(p),[nx,ny]=mapXY(name,x,y,o);
-  list.push({name,p,x,y,nx,ny,np:enc(p,nx,ny),vis});
+  if(seen[name]||name==="osd_camera_frame_pos")continue;seen[name]=1;
+  const vis=(p&0x3800)!==0,hz=HZ.includes(name);
+  if(!vis&&!hid&&!hz)continue;
+  const[x,y]=dec(p);raw.push({name,label:name.replace(/^osd_|_pos$/g,""),x,y,p,vis:vis||hz});
  }
- $("res").hidden=false;
- if(!list.length){$("msg").textContent="No osd_..._pos lines found. Paste the output of diff all, dump or get osd.";$("msg").className="note warn";$("out").value="";$("pv").hidden=true;return}
- const ch=list.filter(e=>e.np!==e.p);
- outText=ch.map(e=>"set "+e.name+" = "+e.np).join("\n")+"\nsave\n";
+ return raw;
+}
+function parseAP(src,hid,scr){
+ const re=/^\s*(OSD[1-4])_([A-Z0-9_]+)_(X|Y|EN)\s*[,=\s]\s*(-?[\d.]+)/gim,d={};let m;
+ while((m=re.exec(src))){const s=m[1].toUpperCase(),n=m[2].toUpperCase(),k=s+"|"+n;(d[k]=d[k]||{s,n})[m[3].toUpperCase()]=Math.round(+m[4])}
+ const raw=[];
+ Object.values(d).forEach(e=>{
+  if(e.X===undefined||e.Y===undefined||(scr!=="all"&&e.s!==scr))return;
+  const on=e.EN===1,hz=e.n==="HORIZON";
+  if(!on&&!hid&&!hz)return;
+  raw.push({name:e.n,scr:e.s,label:e.s+" "+e.n.toLowerCase(),x:e.X,y:e.Y,vis:on||hz});
+ });
+ return raw;
+}
+function draw(el,list,w,h,after){
+ el.style.setProperty("--w",w);el.style.setProperty("--h",h);el.style.aspectRatio=(w*0.6)+"/"+h;el.innerHTML="";
+ list.forEach(e=>{const s=document.createElement("span"),x=after?e.nx:e.x,y=after?e.ny:e.y;
+  s.style.left=Math.min(x/w*100,96)+"%";s.style.top=Math.min(y/h*100,95)+"%";s.textContent=e.label;el.appendChild(s)});
+}
+let outText="",fname="osd_resized.txt";
+$("go").onclick=()=>{
+ const o={ow:+$("ow").value,oh:+$("oh").value,nw:+$("nw").value,nh:+$("nh").value},src=$("in").value,hid=$("hid").checked;
+ const raw=mode==="bf"?parseBF(src,hid):parseAP(src,hid,$("scr").value);
+ $("res").hidden=false;$("msg").className="note";$("after").textContent=AFTER[mode];
+ if(!raw.length){$("msg").textContent=mode==="bf"?"No osd_..._pos lines found. Paste the output of get osd, diff all or dump.":"No enabled OSD items found. Check the pasted lines and the selected screen.";$("msg").className="note warn";$("out").value="";$("pv").hidden=true;return}
+ o.ohe=Math.max(o.oh,Math.max(...raw.map(r=>r.y))+1);
+ raw.forEach(r=>{[r.nx,r.ny]=mapXY(r,o)});
+ let lines=[];
+ if(mode==="bf"){raw.forEach(r=>{r.np=enc(r.p,r.nx,r.ny);if(r.np!==r.p)lines.push("set "+r.name+" = "+r.np)});outText=lines.join("\n")+"\nsave\n";fname="osd_resized.txt"}
+ else{raw.forEach(r=>{if(r.nx!==r.x)lines.push(r.scr+"_"+r.name+"_X,"+r.nx);if(r.ny!==r.y)lines.push(r.scr+"_"+r.name+"_Y,"+r.ny)});outText=lines.join("\r\n")+"\r\n";fname="osd_resized.param"}
  $("out").value=outText;
- const over=list.filter(e=>e.nx>=o.nw-1).length;
- $("msg").className="note";
- $("msg").textContent=list.length+" elements read, "+ch.length+" changed, from "+o.ow+"x"+o.oh+" to "+o.nw+"x"+o.nh+". Hidden-element positions left alone unless the box is ticked (the horizon group is always moved)."+(over?" "+over+" element(s) sit in the last column, so check that they fit.":"");
- $("pv").hidden=false;
- $("c1").textContent="Before ("+o.ow+"x"+o.oh+")";$("c2").textContent="After ("+o.nw+"x"+o.nh+")";
- draw($("v1"),list.filter(e=>e.vis||HORIZON.includes(e.name)||$("hid").checked),o.ow,o.oh,0);
- draw($("v2"),list.filter(e=>e.vis||HORIZON.includes(e.name)||$("hid").checked),o.nw,o.nh,1);
- $("tb").innerHTML="<tr><th>Element</th><th>Before</th><th>After</th></tr>"+list.map(e=>"<tr><td>"+e.name.replace(/^osd_|_pos$/g,"")+"</td><td>"+e.x+","+e.y+"</td><td>"+e.nx+","+e.ny+"</td></tr>").join("");
+ const ch=raw.filter(r=>r.nx!==r.x||r.ny!==r.y).length,edge=raw.filter(r=>r.nx>=o.nw-1).length;
+ $("msg").textContent=raw.length+" elements read, "+ch+" changed, from "+o.ow+"x"+o.oh+" to "+o.nw+"x"+o.nh+". Elements that are hidden or disabled stay put unless the box is ticked (the horizon is always moved)."+(edge?" "+edge+" element(s) sit in the last column, so check that they fit.":"");
+ $("pv").hidden=false;$("c1").textContent="Before ("+o.ow+"x"+o.oh+")";$("c2").textContent="After ("+o.nw+"x"+o.nh+")";
+ const show=raw.filter(r=>r.vis||hid);
+ draw($("v1"),show,o.ow,Math.max(o.oh,o.ohe),0);draw($("v2"),show,o.nw,o.nh,1);
+ $("tb").innerHTML="<tr><th>Element</th><th>Before</th><th>After</th></tr>"+raw.map(r=>"<tr><td>"+r.label+"</td><td>"+r.x+","+r.y+"</td><td>"+r.nx+","+r.ny+"</td></tr>").join("");
 };
-$("cp").onclick=async()=>{try{await navigator.clipboard.writeText(outText);$("cp").textContent="Copied"}catch(e){$("out").select();document.execCommand&&document.execCommand("copy");$("cp").textContent="Copied"}setTimeout(()=>$("cp").textContent="Copy lines",1500)};
-$("dl").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([outText],{type:"text/plain"}));a.download="osd_resized.txt";a.click()};
+$("cp").onclick=async()=>{try{await navigator.clipboard.writeText(outText)}catch(e){$("out").select();document.execCommand&&document.execCommand("copy")}$("cp").textContent="Copied";setTimeout(()=>$("cp").textContent="Copy lines",1500)};
+$("dl").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([outText],{type:"text/plain"}));a.download=fname;a.click()};
 </script>
 </body>
 </html>
