@@ -1,6 +1,6 @@
 # OSD canvas resizer for Betaflight and ArduPilot
 
-**Live tool: https://jaroszmm.github.io/Betaflight-VISOR-OSD-resizer/**
+**Live tool:https://jaroszmm.github.io/OSD-canvas-resizer-for-Betaflight-and-ArduPilot/ **
 
 Stretches an OSD layout to a bigger canvas by moving element positions.
 Works with Betaflight (CLI output) and ArduPilot (param file). It runs entirely
