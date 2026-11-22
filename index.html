@@ -185,9 +185,9 @@ $("cp").onclick=async()=>{try{await navigator.clipboard.writeText(outText)}catch
 $("dl").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([outText],{type:"text/plain"}));a.download=fname;a.click()};
 function loadFile(f){if(!f)return;const r=new FileReader();r.onload=()=>{$("in").value=String(r.result);$("res").hidden=true;$("pv").hidden=true};r.readAsText(f)}
 const ta=$("in");
-["dragenter","dragover"].forEach(t=>ta.addEventListener(t,e=>{e.preventDefault();ta.classList.add("drag")}));
-["dragleave","drop"].forEach(t=>ta.addEventListener(t,e=>{e.preventDefault();ta.classList.remove("drag")}));
-ta.addEventListener("drop",e=>loadFile(e.dataTransfer.files[0]));
+window.addEventListener("dragover",e=>{e.preventDefault();ta.classList.add("drag")});
+window.addEventListener("dragleave",e=>{if(!e.relatedTarget)ta.classList.remove("drag")});
+window.addEventListener("drop",e=>{e.preventDefault();ta.classList.remove("drag");loadFile(e.dataTransfer.files[0])});
 $("pick").onclick=()=>$("file").click();
 $("file").onchange=e=>{loadFile(e.target.files[0]);e.target.value=""};
 </script>
