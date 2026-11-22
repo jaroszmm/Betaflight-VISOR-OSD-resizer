@@ -1,5 +1,3 @@
-# Betaflight-VISOR-OSD-resizer
-A workaround for UHD fonts in newer BF
 # Betaflight OSD canvas resizer
 
 Stretches a Betaflight OSD layout from the standard 53x20 canvas to 60x22
