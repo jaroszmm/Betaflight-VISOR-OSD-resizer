@@ -17,6 +17,7 @@ p.lead{margin:0 0 18px;color:var(--mute);max-width:70ch}
 section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:14px}
 h2{font-size:1rem;margin:0 0 10px}
 textarea{width:100%;min-height:150px;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;resize:vertical}
+textarea.drag{outline:2px dashed var(--acc);outline-offset:2px}
 .row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
 label{display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--mute)}
 label[hidden]{display:none}
@@ -56,6 +57,7 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 <section>
 <h2>2. Paste your layout</h2>
 <textarea id="in" spellcheck="false"></textarea>
+<p class="row" style="margin-top:8px"><button class="alt" id="pick" type="button">Open file</button><input type="file" id="file" accept=".txt,.param,.log,.cfg,text/plain" hidden></p>
 <p class="note" id="hint"></p>
 </section>
 
@@ -110,7 +112,7 @@ let mode="bf";
 function fill(id,def){const s=$(id);s.innerHTML="";PRE[mode].forEach((p,i)=>{const o=document.createElement("option");o.value=i;o.textContent=p[1]?p[0]+" ("+p[1]+"x"+p[2]+")":p[0];s.appendChild(o)});s.value=def}
 function sync(sel,w,h){const p=PRE[mode][sel.value];if(p[1]){w.value=p[1];h.value=p[2]}}
 function setMode(){mode=$("mode").value;fill("sp",DEF[mode][0]);fill("tp",DEF[mode][1]);sync($("sp"),$("ow"),$("oh"));sync($("tp"),$("nw"),$("nh"));
-$("scl").hidden=mode!=="ap";$("hint").textContent=HINT[mode];$("cnote").textContent=CNOTE[mode];
+$("scl").hidden=mode!=="ap";$("hint").textContent=HINT[mode]+" You can also drop a file onto the box or use Open file.";$("cnote").textContent=CNOTE[mode];
 $("in").placeholder=mode==="bf"?"osd_vbat_pos = 3150\nset osd_link_quality_pos = 2082":"OSD1_ALTITUDE_X,41\nOSD1_ALTITUDE_Y,7\nOSD1_ALTITUDE_EN,1";
 $("res").hidden=true;$("pv").hidden=true}
 $("mode").onchange=setMode;
@@ -181,6 +183,13 @@ $("go").onclick=()=>{
 };
 $("cp").onclick=async()=>{try{await navigator.clipboard.writeText(outText)}catch(e){$("out").select();document.execCommand&&document.execCommand("copy")}$("cp").textContent="Copied";setTimeout(()=>$("cp").textContent="Copy lines",1500)};
 $("dl").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([outText],{type:"text/plain"}));a.download=fname;a.click()};
+function loadFile(f){if(!f)return;const r=new FileReader();r.onload=()=>{$("in").value=String(r.result);$("res").hidden=true;$("pv").hidden=true};r.readAsText(f)}
+const ta=$("in");
+["dragenter","dragover"].forEach(t=>ta.addEventListener(t,e=>{e.preventDefault();ta.classList.add("drag")}));
+["dragleave","drop"].forEach(t=>ta.addEventListener(t,e=>{e.preventDefault();ta.classList.remove("drag")}));
+ta.addEventListener("drop",e=>loadFile(e.dataTransfer.files[0]));
+$("pick").onclick=()=>$("file").click();
+$("file").onchange=e=>{loadFile(e.target.files[0]);e.target.value=""};
 </script>
 </body>
 </html>
