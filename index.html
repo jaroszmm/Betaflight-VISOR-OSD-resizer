@@ -43,7 +43,7 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 <body>
 <main>
 <h1>OSD canvas resizer</h1>
-<p class="lead">Stretch an OSD layout to a bigger canvas. Choose Betaflight or ArduPilot, paste your CLI output or parameter file, pick the canvas sizes, and get lines for the new size. Only element positions change.</p>
+<p class="lead">Stretch an OSD layout to a bigger canvas. Paste your Betaflight CLI output or ArduPilot parameter file (the tool detects which one it is), pick the canvas sizes, and get lines for the new size. Only element positions change.</p>
 
 <section>
 <h2>1. Flight controller firmware</h2>
@@ -59,6 +59,7 @@ td,th{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line)}
 <h2>2. Paste your layout</h2>
 <textarea id="in" spellcheck="false"></textarea>
 <p class="row" style="margin-top:8px"><button class="alt" id="pick" type="button">Open file</button><input type="file" id="file" accept=".txt,.param,.log,.cfg,text/plain" hidden></p>
+<p class="note" id="det"></p>
 <p class="note" id="hint"></p>
 </section>
 
@@ -220,7 +221,13 @@ $("go").onclick=()=>{
 };
 $("cp").onclick=async()=>{try{await navigator.clipboard.writeText(outText)}catch(e){$("out").select();document.execCommand&&document.execCommand("copy")}$("cp").textContent="Copied";setTimeout(()=>$("cp").textContent="Copy lines",1500)};
 $("dl").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([outText],{type:"text/plain"}));a.download=fname;a.click()};
-function loadFile(f){if(!f)return;const r=new FileReader();r.onload=()=>{$("in").value=String(r.result);$("res").hidden=true;$("pv").hidden=true};r.readAsText(f)}
+function detect(t){const bf=(t.match(/^\s*(?:set\s+)?osd_[a-z0-9_]+_pos\s*=/gim)||[]).length,ap=(t.match(/^\s*OSD[1-4]_[A-Z0-9_]+_(?:X|Y|EN)\s*[,=\s]/gim)||[]).length;return bf>ap?"bf":ap>bf?"ap":null}
+function autoMode(){const d=detect($("in").value),n=$("det");
+ if(!d){n.textContent="";return}
+ if(d!==mode){$("mode").value=d;setMode()}
+ n.textContent="Detected: "+(d==="bf"?"Betaflight CLI output":"ArduPilot parameter file")+". You can still change the firmware above."}
+$("in").addEventListener("input",autoMode);
+function loadFile(f){if(!f)return;const r=new FileReader();r.onload=()=>{$("in").value=String(r.result);$("res").hidden=true;$("pv").hidden=true;autoMode()};r.readAsText(f)}
 const ta=$("in");
 window.addEventListener("dragover",e=>{e.preventDefault();ta.classList.add("drag")});
 window.addEventListener("dragleave",e=>{if(!e.relatedTarget)ta.classList.remove("drag")});
